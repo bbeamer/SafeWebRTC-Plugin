@@ -1,0 +1,71 @@
+/* -------------------------------   -------------------------------
+
+This addon checks if the permissions table was modified "on the fly" in 
+browser context.
+modified might mean, a permission query was added, altered, or deleted.
+
+Once it was modified through the nsIpermissionManager interface, an event will
+be fired which we handle with the system/events module.
+
+The plugin Asks for user consent to allow sharing local devices with specific 
+origin.
+   -------------------------------   -------------------------------
+*/
+var events = require("sdk/system/events");
+
+var {Ci, Cc} = require("chrome");
+
+var prompts = Cc["@mozilla.org/embedcomp/prompt-service;1"]
+  .getService(Ci.nsIPromptService);
+var check = {value: true};
+
+var permissionManager = Cc["@mozilla.org/permissionmanager;1"]
+  .createInstance(Ci.nsIPermissionManager);
+
+function listener(event) {
+    var permission;
+    //Some events aren't specific to one permission and thus don't have a subject.
+    if(event.subject)
+        permission =
+            event.subject.QueryInterface(Ci.nsIPermission);
+    
+    switch (event.data) {
+        case 'added':
+            console.log("A",permission.type,"for",permission.host,
+                        "was added into permissions.sqlite");
+            
+            if (permission.type == 'camera' || permission.type == 'microphone' ||
+               permission.type == 'geo') {
+                var result = prompts.confirm(null, "permissions confirm", 
+                                   "Do you really want to share "+
+                                   permission.type+" with origin "+
+                                   permission.host+" ?");
+                
+                if (result)
+                    //Nothing to do
+                    console.log("ok, shared");
+                else {
+                    console.log("got to clear it");
+                    permissionManager.remove(permission.host, permission.type);
+                }
+            }
+            break;
+        case 'changed':
+            console.log("A",permission.type,"for",permission.host,
+                        "was modified in permissions.sqlite database");
+            break;
+        case 'cleared':
+            console.log("The entire database was cleared");
+            break;            
+        case 'deleted':
+            console.log("The ", permission.type, " for ", permission.host, 
+                        "was deleted");
+            break;
+            
+        default:
+            console.log("Unknown action");
+    }
+}
+//debug//console.log("hello");
+
+events.on("perm-changed", listener);
